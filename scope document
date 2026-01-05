@@ -1,0 +1,35 @@
+PROJECT BRB - Requirements & Scope
+
+Personas
+
+Identity Design Analysts (primary)
+
+Later: role owners / line managers / BAU heads
+
+Pain points to solve
+
+Manual bundling of Activity Roles (ARs) into Business Roles (BRs)
+
+Approval bottlenecks (approving individual ARs)
+
+Lack of standardization
+
+Role overlap/redundancy (future: SoD checks)
+
+Objectives / goals
+
+Automate role identification/modeling from identity + HR data
+
+Consistent, objective criteria (not analyst intuition)
+
+Scale to large hierarchies
+
+Streamline role mgmt/reporting/auditing (future)
+
+Leverage identity role metadata + job codes + access patterns (job/access patterns noted as future iteration in your doc)
+
+Scope
+
+“All human user accounts within identity”
+
+Focus grouping by Supervisory Hierarchy level (e.g., SH/L6)
