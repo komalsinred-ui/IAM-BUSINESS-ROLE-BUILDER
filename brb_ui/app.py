@@ -4,13 +4,24 @@ import pandas as pd
 
 API = "http://127.0.0.1:8000"
 
+def build_filters(supervisor_level6, job_code, department):
+    payload = {"supervisor_level6": supervisor_level6.strip()}
+    if job_code and job_code.strip():
+        payload["job_code"] = job_code.strip()
+    if department and department.strip():
+        payload["department"] = department.strip()
+    return payload
+
+
 st.set_page_config(page_title="Business Role Builder Dashboard", layout="wide")
 st.title("IAM Business Role Builder (Phase 2)")
 
 st.sidebar.header("Filters")
-supervisor = st.sidebar.text_input("Supervisor Level 6", value="SH_L6_1")
+supervisor_level6 = st.sidebar.text_input("Supervisor Level 6", value="SH_L6_1")
 job_code = st.sidebar.text_input("Job Code (optional)", value="")
 department = st.sidebar.text_input("Department (optional)", value="")
+
+filters = build_filters(supervisor_level6, job_code, department)
 
 st.sidebar.header("Thresholds")
 min_group_size = st.sidebar.slider("Min group size", 1, 50, 10)
@@ -32,7 +43,7 @@ def clean_optional(v):
     return v if v else None
 
 payload_common = {
-    "supervisor_level6": clean_optional(supervisor),
+    "supervisor_level6": clean_optional(supervisor_level6),
     "job_code": clean_optional(job_code),
     "department": clean_optional(department),
     "min_group_size": min_group_size,
@@ -43,20 +54,75 @@ payload_common = {
 
 with tab1:
     st.subheader("Bundle Suggestions")
+
     if st.button("Run Bundle Query"):
-        r = requests.post(f"{API}/bundles/query", json=payload_common, timeout=60)
-        data = r.json()
+        payload = {
+            **filters,
+            "min_group_size": int(min_group_size),
+            "min_role_support": float(min_role_support),
+            "min_itemset_support": float(min_itemset_support),
+            "max_k": int(max_k),
+        }
+
+        
+        r = requests.post(f"{API}/bundles/query", json=payload, timeout=60)
+
+        # ---- SAFE JSON handling ----
+        if r.status_code != 200:
+            st.error(f"API error {r.status_code}")
+            st.code(r.text)   # shows actual FastAPI error/traceback if any
+            st.stop()
+
+        try:
+            data = r.json()
+        except Exception:
+            st.error("API returned non-JSON response")
+            st.code(r.text)
+            st.stop()
 
         st.write(f"Returned: {data.get('count', 0)} rows")
         rows = data.get("rows", [])
+
         if not rows:
             st.warning("No bundles found. Go to Diagnose tab to see why.")
         else:
             df = pd.DataFrame(rows)
-            st.dataframe(df, use_container_width=True)
+
+            # Clean table (hide nested JSON column)
+            display_cols = [c for c in df.columns if c != "sod_conflicts"]
+            st.dataframe(df[display_cols], use_container_width=True, hide_index=True)
+
+            st.markdown("### Explainability + SoD (per bundle)")
+            for i, row in df.iterrows():
+                bundle_roles = row.get("bundle_roles", [])
+                tier = row.get("confidence_tier", "NA")
+                cov = row.get("coverage_pct", "NA")
+
+                sod_risk = row.get("sod_risk", "NONE")
+                sod_count = row.get("sod_conflict_count", 0)
+
+                title = f"Bundle {i+1}: {bundle_roles} ({tier}, {cov}%) | SoD={sod_risk} ({sod_count})"
+
+                with st.expander(title):
+                    st.write(row.get("explain", ""))
+
+                    st.markdown("**SoD**")
+                    st.write(f"Risk: **{sod_risk}**, Conflicts: **{sod_count}**")
+
+                    conflicts = row.get("sod_conflicts", [])
+                    if conflicts:
+                        st.json(conflicts)
+                    else:
+                        st.caption("No SoD conflicts detected for this bundle.")
 
             csv = df.to_csv(index=False).encode("utf-8")
-            st.download_button("Download bundle_suggestions.csv", csv, file_name="bundle_suggestions.csv", mime="text/csv")
+            st.download_button(
+                "Download bundle_suggestions.csv",
+                csv,
+                file_name="bundle_suggestions.csv",
+                mime="text/csv"
+            )
+          
 
 with tab2:
     st.subheader("Diagnosis Report")
@@ -65,7 +131,19 @@ with tab2:
         diag_payload["top_n"] = 10
 
         r = requests.post(f"{API}/bundles/diagnose", json=diag_payload, timeout=60)
-        report = r.json()
+        
+        # ---- SAFE JSON handling ----
+        if r.status_code != 200:
+            st.error(f"API error {r.status_code}")
+            st.code(r.text)   # shows actual FastAPI error/traceback if any
+            st.stop()
+
+        try:
+            report = r.json()
+        except Exception:
+            st.error("API returned non-JSON response")
+            st.code(r.text)
+            st.stop()
 
         st.json(report)
 
@@ -85,19 +163,32 @@ with tab3:
     st.subheader("Role Metrics (Access Ratio Evaluator)")
     if st.button("Load Role Metrics"):
         metrics_payload = {
-            "supervisor_level6": clean_optional(supervisor),
+            "supervisor_level6": clean_optional(supervisor_level6),
             "department": clean_optional(department),
             "job_code": clean_optional(job_code),
             "assignment_type": None
         }
         r = requests.post(f"{API}/roles/metrics", json=metrics_payload, timeout=60)
-        data = r.json()
+        # ---- SAFE JSON handling ----
+        if r.status_code != 200:
+            st.error(f"API error {r.status_code}")
+            st.code(r.text)   # shows actual FastAPI error/traceback if any
+            st.stop()
+
+        try:
+            data = r.json()
+        except Exception:
+            st.error("API returned non-JSON response")
+            st.code(r.text)
+            st.stop()
+
+        
 
         st.write(f"Returned: {data.get('count', 0)} rows")
         rows = data.get("rows", [])
         if rows:
             df = pd.DataFrame(rows)
-            st.dataframe(df, use_container_width=True)
+            st.dataframe(df, use_container_width=True, hide_index=True)
             csv = df.to_csv(index=False).encode("utf-8")
             st.download_button("Download role_metrics.csv", csv, file_name="role_metrics.csv", mime="text/csv")
 
@@ -143,40 +234,43 @@ with tab4:
     if st.button("Explain Access"):
         payload = {"user_id": user_id.strip(), "role_name": role_name.strip()}
 
-        try:
-            r = requests.post(f"{API}/users/explain-access", json=payload, timeout=60)
-            data = r.json()
-        except Exception as e:
-            st.error(f"Failed to call /users/explain-access: {e}")
+        r = requests.post(f"{API}/users/explain-access", json=payload, timeout=60)
+
+         # 1) handle non-200 first
+        if r.status_code != 200:
+            st.error(f"API error {r.status_code}")
+            st.code(r.text)   # show exact backend error (most useful)
             st.stop()
 
-        if r.status_code != 200:
-            st.error(f"API error {r.status_code}: {data.get('detail', data)}")
-        else:
-            st.success(f"Approver: {data.get('approver_level')} | Risk: {data.get('risk')}")
+        # 2) now parse JSON safely
+        try:
+            data = r.json()
+        except Exception:
+            st.error("API returned non-JSON response")
+            st.code(r.text)
+            st.stop()
 
-            st.write("**Reasons:**")
-            for x in data.get("reasons", []):
-                st.write(f"- {x}")
+        # 3) render success UI
+        st.success(f"Approver: {data.get('approver_level')} | Risk: {data.get('risk')}")
 
-            # Evidence section (we’ll populate real numbers next)
-            st.write("**Evidence (coming next):**")
-            st.json({
-                "user_roles_count": data.get("user_roles_count"),
-                "role_prevalence_in_group_pct": data.get("role_prevalence_in_group_pct"),
-                "similar_users_count": data.get("similar_users_count"),
-            })
+        st.write("**Reasons:**")
+        for x in data.get("reasons", []):
+            st.write(f"- {x}")
 
-            st.write("**User context:**")
-            st.json({
-                "department": data.get("department"),
-                "job_code": data.get("job_code"),
-                "supervisor_level6": data.get("supervisor_level6"),
-                "assignment_types": data.get("assignment_types"),
-            })
+        st.write("**Evidence (coming next):**")
+        st.json({
+        "user_roles_count": data.get("user_roles_count"),
+        "role_prevalence_in_group_pct": data.get("role_prevalence_in_group_pct"),
+        "similar_users_count": data.get("similar_users_count"),
+        })
 
-
-
+        st.write("**User context:**")
+        st.json({
+        "department": data.get("department"),
+        "job_code": data.get("job_code"),
+        "supervisor_level6": data.get("supervisor_level6"),
+        "assignment_types": data.get("assignment_types"),
+        })
 
 with tab5:
     st.subheader("New Joiner Access Recommendation (with SoD policy)")
@@ -199,7 +293,18 @@ with tab5:
         }
 
         r = requests.post(f"{API}/new-joiner/recommend", json=payload, timeout=60)
-        data = r.json()
+        
+        if r.status_code != 200:
+            st.error(f"API error {r.status_code}")
+            st.code(r.text)   # shows actual FastAPI error/traceback if any
+            st.stop()
+
+        try:
+            data = r.json()
+        except Exception:
+            st.error("API returned non-JSON response")
+            st.code(r.text)
+            st.stop()
 
         st.write(f"Returned: {data.get('count', 0)} rows")
         rows = data.get("rows", [])
@@ -208,7 +313,7 @@ with tab5:
             st.warning("No recommendations found for this cohort. Try lowering min role support.")
         else:
             df = pd.DataFrame(rows)
-            st.dataframe(df, use_container_width=True)
+            st.dataframe(df, use_container_width=True, hide_index=True)
 
             csv = df.to_csv(index=False).encode("utf-8")
             st.download_button("Download new_joiner_recommendation.csv", csv, file_name="new_joiner_recommendation.csv", mime="text/csv")
