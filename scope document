@@ -1,232 +1,30 @@
-PROJECT BRB - Requirements & Scope
-
-We’re building an IAM Role Intelligence Assistant with these modules:
-
-BRB – Business Role Builder (bundle ARs into BR candidates)
-Business Role Builder
-
-Focus: Proactive construction of optimized Business Roles
-
-Bundles commonly co-requested or co-assigned activity roles
-
-Suggests naming, justification, SoD compliance
-
-Goal: Reduce request frequency, streamline approvals
-
-Proposed Business Role	Included Activity Roles	BU	Confidence	SoD Conflict	Auto-Approval Feasible	AI Justification	Action
-DataEng_Analytics_Read	R101, R105, R108	Data Eng	92%	No	Yes	Assigned together 88% of time; same team	[View Details]
-DataEng_ETL_Manager	R102, R110	Data Eng	87%	Yes (Policy#14)	No	Co-requested, but triggers SoD	[View Details]
-DataEng_Temp_Contract	R107, R109	Data Eng	76%	No	Yes	Temporary roles used in onboarding	[View Details]
-
-Role Explorer (overlap/duplicate/unused roles by BU/team/department)
-Smart Role Analyzer
-
-Focus: Detect issues in existing roles
-
-Duplicate roles
-
-Overlapping roles
-
-Unused/outliers
-
-Output: Tagging and diagnostics
-
-Use Case: Role Simplification
-
-Role A	Role B	Entitlement Overlap	SoD Conflict	Risk Level	Suggested Action
-R101	R103	82%	Yes (Policy#12)	                 High         Flag for separation
-R104	R105	89%	None	                         Medium	      Merge recommended
-
-Access Ratio Evaluator (usage insights: entitlement/role utilization, coverage, bloat)
-
-New Joiner Access Recommender (recommend access based on job/supervisor/peers)
-
-SoD Guard (prevent recommending conflicting access)
-
-Chat + Export + Audit (ask questions, export outputs, trace decisions)
-
-AWS Deployment + Bedrock (LLM for explanations & intent routing)
-
-
-Personas
-
-Identity Design Analysts (primary)
-
-Later: role owners / line managers / BAU heads
-
-Pain points to solve
-
-Manual bundling of Activity Roles (ARs) into Business Roles (BRs)
-
-Approval bottlenecks (approving individual ARs)
-
-Lack of standardization
-
-Role overlap/redundancy (future: SoD checks)
-
-Objectives / goals
-
-Automate role identification/modeling from identity + HR data
-
-Consistent, objective criteria (not analyst intuition)
-
-Scale to large hierarchies
-
-Streamline role mgmt/reporting/auditing (future)
-
-Leverage identity role metadata + job codes + access patterns (job/access patterns noted as future iteration in your doc)
-
-Scope
-
-“All human user accounts within identity”
-
-Focus grouping by Supervisory Hierarchy level (e.g., SH/L6)
-
-
-********************************************************************************************************************
-
-brb_core/synthetic_data.py
-
-Purpose:
-Simulates realistic IAM data so the system can be developed and tested without production access.
-
-What it does:
-
-Generates users under supervisors
-
-Assigns job codes, departments, assignment types
-
-Ensures some roles are common (signal) and some are random (noise)
-
-Mimics real-world IAM distributions using randomness
-
-Why it exists:
-To validate logic, thresholds, and edge cases before integrating real HR / SailPoint data.
-
-📁 brb_core/bundling.py
-
-Purpose:
-Identifies Business Role candidates using deterministic logic.
-
-What it does:
-
-Groups users by org context (e.g., supervisor + job code)
-
-Finds frequent pairs and triples of activity roles
-
-Applies thresholds:
-
-minimum group size
-
-minimum role support
-
-minimum bundle support
-
-Tags suggestions (Birthright / Job-Based / Department)
-
-Key idea:
-“If a set of roles appears together for most users in a cohort, it’s a business role candidate.”
-
-📁 brb_core/metrics.py
-
-Purpose:
-Provides role usage intelligence (Access Ratio Evaluator).
-
-What it does:
-
-Calculates role coverage (% of users with a role)
-
-Identifies unused / low-use roles
-
-Builds per-user access summaries
-
-Detects overlapping roles using Jaccard similarity
-
-Why it matters:
-Supports governance, cleanup, audits, and explains why roles exist.
-
-📁 brb_core/sod_rules.py
-
-Purpose:
-Defines Segregation of Duties (SoD) policy framework.
-
-What it does:
-
-Stores SoD conflict rules with severity (LOW / MEDIUM / HIGH)
-
-Detects conflicts in a proposed role set
-
-Applies policy:
-
-blocks HIGH severity
-
-warns on MEDIUM / LOW
-
-Design choice:
-Rule-based + severity-aware → audit-friendly and extensible later.
-
-📁 brb_core/new_joiner.py
-
-Purpose:
-Recommends access for new joiners in a controlled, explainable way.
-
-What it does:
-
-Builds a cohort (job code + supervisor/department)
-
-Recommends roles used by most users in that cohort
-
-Applies SoD policy and removes high-risk roles
-
-Outputs coverage %, reasons, and SoD details
-
-Key point:
-This is recommendation, not auto-provisioning.
-
-📁 brb_core/run_local.py
-
-Purpose:
-Local orchestration layer (Phase 1 pipeline runner).
-
-What it does:
-
-Generates synthetic IAM data
-
-Runs bundling engine
-
-Runs metrics + overlap analysis
-
-Runs new joiner recommendation
-
-Exports all outputs to CSV
-
-Why it’s important:
-Acts as the backbone that later becomes:
-
-Lambda / ECS job
-
-API backend
-
-MLOps pipeline entry point
-
-📁 data/
-
-Raw synthetic IAM extracts
-
-Mimics upstream HR / IAM feeds
-
-📁 outputs/
-
-bundle_suggestions.csv → BR candidates
-
-role_metrics.csv → access ratios
-
-user_access_summary.csv → per-user insight
-
-role_overlap_top50.csv → duplicate/overlap roles
-
-new_joiner_recommendation.csv → onboarding access
-
-🔑 One-line summary (use this in interviews)
-
-“I built a deterministic IAM intelligence engine that identifies business role candidates, evaluates role usage, recommends new-joiner access with SoD controls, and exports audit-ready outputs — all before adding GenAI for explanation and interaction.”
+Phase 2 – Completed (Engine + API + UI MVP)
+
+✔ Business Role Builder (BRB)
+- Deterministic bundle discovery using activity-role co-occurrence (pairs/triples)
+- Dynamic support thresholds for small cohorts (effective_itemset_support adjustment)
+- Confidence tiers (STRONG / MEDIUM / WEAK)
+- Explainable rationale per suggestion (coverage + thresholds used)
+
+✔ SoD Guard (Rule-based + Heuristic)
+- Severity-aware SoD framework
+- Heuristic SoD detection using privilege / finance / approval keyword signals
+- Bundle-level SoD risk scoring (LOW / MEDIUM / HIGH) with conflict details
+- New-joiner recommendations support “block_high_sod” policy
+
+✔ Access Ratio Evaluator
+- Role coverage and usage insights (foundation for unused/bloat detection)
+- User access summaries + overlap signals (future: deeper role cleanup)
+
+✔ New Joiner Access Recommendation
+- Cohort-based access recommendation (job_code + supervisor/department)
+- Support-threshold driven recommendations with SoD policy applied
+- Exportable, audit-friendly outputs
+
+✔ API + UI (Phase 2 Layer)
+- FastAPI contract exposing the engine as stable endpoints
+- Streamlit dashboard with filters, diagnostics, explainability, and exports
+- “Diagnose why empty” to debug thresholds and cohort constraints
+
+✔ Export + Audit
+- CSV export for stakeholder review and audit traceability
