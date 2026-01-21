@@ -26,23 +26,31 @@ def filter_df(df: pd.DataFrame, supervisor_level6=None, department=None, job_cod
     return out
 
 def query_bundles(df: pd.DataFrame, req):
-    # Use stable grouping for now (Phase 1 proven)
     bundles = suggest_itemsets(
         df,
-        group_cols=("supervisor_level6", "job_code"),
+        group_cols=("supervisor_level6", "job_code", "department"),
         min_role_support=req.min_role_support,
         min_itemset_support=req.min_itemset_support,
         max_k=req.max_k,
-        min_group_size=req.min_group_size
+        min_group_size=req.min_group_size,
     )
-    # filter output rows if user asked for specific filters
-    if req.supervisor_level6:
+
+    # Guard: no results
+    if bundles is None or bundles.empty:
+        return bundles
+
+    # Apply filters safely
+    if getattr(req, "supervisor_level6", None) and "supervisor_level6" in bundles.columns:
         bundles = bundles[bundles["supervisor_level6"] == req.supervisor_level6]
-    if req.job_code:
+
+    if getattr(req, "job_code", None) and "job_code" in bundles.columns:
         bundles = bundles[bundles["job_code"] == req.job_code]
-    if req.assignment_type and "assignment_type" in bundles.columns:
-        bundles = bundles[bundles["assignment_type"] == req.assignment_type]
-    return bundles
+
+    if getattr(req, "department", None) and "department" in bundles.columns:
+        bundles = bundles[bundles["department"] == req.department]
+
+    return bundles.reset_index(drop=True)
+
 
 def get_role_metrics(df: pd.DataFrame, req):
     f = filter_df(df, req.supervisor_level6, req.department, req.job_code, req.assignment_type)
